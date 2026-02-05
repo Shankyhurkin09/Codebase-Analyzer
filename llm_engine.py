@@ -1,9 +1,14 @@
 """LLM engine: Hugging Face Transformers for advanced code analysis."""
 
 import json
+import os
 import re
 
 from langchain.prompts import PromptTemplate
+
+# Project-local model storage (downloads here instead of ~/.cache/huggingface)
+_MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "hf")
+os.makedirs(_MODELS_DIR, exist_ok=True)
 
 # Best code-capable models from Hugging Face (smaller = faster, larger = better quality)
 DEFAULT_MODEL_ID = "Qwen/Qwen2.5-1.5B-Instruct"
@@ -24,7 +29,7 @@ ADVANCED_ANALYSIS_PROMPT = PromptTemplate(
     template="""You are a senior software architect performing deep code analysis.
 
 Analyze this code and return ONLY valid JSON (no markdown, no code blocks, no extra text).
-For every method, provide a clear "description" explaining exactly what the method is used for.
+Be concise. For each method, one short "description" sentence.
 
 Expected structure - extract ALL applicable fields:
 {{
@@ -78,6 +83,66 @@ Analysis summary:
 )
 
 
+def download_model(model_id: str | None = None) -> bool:
+    """Download and store a model to models/hf/. Uses cached copy if already present."""
+    model_id = (model_id or DEFAULT_MODEL_ID).strip()
+    try:
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        print(f"Downloading {model_id} to {_MODELS_DIR}...")
+        AutoTokenizer.from_pretrained(model_id, trust_remote_code=True, cache_dir=_MODELS_DIR)
+        AutoModelForCausalLM.from_pretrained(
+            model_id,
+            trust_remote_code=True,
+            low_cpu_mem_usage=True,
+            cache_dir=_MODELS_DIR,
+        )
+        print(f"  [OK] {model_id}")
+        return True
+    except Exception as e:
+        print(f"  [FAIL] {model_id}: {e}")
+        return False
+
+
+def download_all_models() -> int:
+    """Download all AVAILABLE_MODELS to models/hf/. Returns count of successfully downloaded."""
+    ok = 0
+    for m in AVAILABLE_MODELS:
+        if download_model(m):
+            ok += 1
+    return ok
+
+
+def get_downloaded_models() -> list[str]:
+    """Return model IDs that exist and are complete in models/hf/ (have model weights)."""
+    if not os.path.isdir(_MODELS_DIR):
+        return []
+    prefix = "models--"
+    found = []
+    for name in os.listdir(_MODELS_DIR):
+        if not name.startswith(prefix):
+            continue
+        snap_dir = os.path.join(_MODELS_DIR, name, "snapshots")
+        if not os.path.isdir(snap_dir):
+            continue
+        for snapshot in os.listdir(snap_dir):
+            snap_path = os.path.join(snap_dir, snapshot)
+            if not os.path.isdir(snap_path):
+                continue
+            files = os.listdir(snap_path)
+            has_weights = (
+                "model.safetensors" in files
+                or "pytorch_model.bin" in files
+                or "model.safetensors.index.json" in files
+                or any(f.endswith(".safetensors") for f in files)
+            )
+            if has_weights:
+                model_id = name[len(prefix):].replace("--", "/")
+                found.append(model_id)
+                break
+    return sorted(found) if found else []
+
+
 def check_hf_available() -> tuple[bool, str]:
     """Verify Hugging Face transformers is installed. Returns (success, message)."""
     try:
@@ -102,8 +167,8 @@ def _format_prompt_for_instruct(model_id: str, prompt: str) -> str:
     return prompt
 
 
-def get_llm(model_id: str | None = None):
-    """Lazy-load the Hugging Face LLM. Model downloads from HF Hub on first use."""
+def get_llm(model_id: str | None = None, local_files_only: bool = True):
+    """Lazy-load the Hugging Face LLM from models/hf/. Uses only pre-downloaded models (no network)."""
     global _llm, _current_model_id
     model_id = (model_id or DEFAULT_MODEL_ID).strip()
     if _llm is None or _current_model_id != model_id:
@@ -111,17 +176,24 @@ def get_llm(model_id: str | None = None):
         from langchain_community.llms import HuggingFacePipeline
         from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
-        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_id,
+            trust_remote_code=True,
+            cache_dir=_MODELS_DIR,
+            local_files_only=local_files_only,
+        )
         model = AutoModelForCausalLM.from_pretrained(
             model_id,
             trust_remote_code=True,
             low_cpu_mem_usage=True,
+            cache_dir=_MODELS_DIR,
+            local_files_only=local_files_only,
         )
         pipe = pipeline(
             "text-generation",
             model=model,
             tokenizer=tokenizer,
-            max_new_tokens=1024,
+            max_new_tokens=512,
             temperature=0,
             do_sample=False,
             pad_token_id=tokenizer.eos_token_id,

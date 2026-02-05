@@ -1,10 +1,10 @@
 # Codebase Analysis using LLM
 
-A Python program that analyzes a given codebase, extracts structured knowledge using a local Large Language Model (LLM), and generates machine-readable JSON output. Built with LangChain and Ollama for cost-free, privacy-safe code intelligence extraction.
+A Python program that analyzes a given codebase, extracts structured knowledge using a local Large Language Model (LLM), and generates machine-readable JSON output. Built with LangChain and Hugging Face Transformers for cost-free, privacy-safe code intelligence extraction.
 
 ## Overview
 
-This tool clones any GitHub/GitLab/Bitbucket repository, processes its source code in token-safe chunks, and uses **Hugging Face models** (from the Hub) to extract rich, structured insights. Models download on first use and run locally.
+This tool clones any GitHub/GitLab/Bitbucket repository, processes its source code in token-safe chunks, and uses **Hugging Face models** (from the Hub) to extract rich, structured insights. Models download on first use into the project's `models/hf/` folder and run locally.
 
 **Why Local LLM?**
 
@@ -45,28 +45,39 @@ pip install -r requirements.txt
 
 ### Web UI (recommended)
 
+**Start the app (uses only pre-downloaded models in models/hf/):**
 ```bash
-streamlit run app_ui.py
+python run_app.py
+```
+
+**If no models yet, download first:**
+```bash
+python main.py --download-all
+python run_app.py
 ```
 
 1. Enter a GitHub repo URL (e.g. `https://github.com/spring-projects/spring-petclinic`)
 2. Click **Load Repo** to clone
 3. Select a Hugging Face model in the sidebar (default: Qwen2.5-1.5B-Instruct)
 4. Select a folder from the dropdown (e.g. `src/main/java`)
-5. Click **Run Analysis** (first run downloads the model from Hugging Face Hub)
+5. Click **Run Analysis** (models are pre-downloaded — instant inference, no waiting)
 6. View results in Overview, Files, or Full JSON tabs
 
 ### Command line
 
 ```bash
-# Full analysis (downloads model on first run)
+# Full analysis (uses downloaded models only)
 python main.py --repo https://github.com/owner/repo
 
 # With subfolder and limit
 python main.py --repo https://github.com/owner/repo --folder src/main/java --limit 20
 
-# Use a different Hugging Face model
+# Use a specific model (must be in models/hf/)
 python main.py -r https://github.com/owner/repo --model Qwen/Qwen2-0.5B-Instruct
+
+# Download models (run before first use)
+python main.py --download-all
+python main.py --download --model Qwen/Qwen2-0.5B-Instruct
 ```
 
 ## Approach
@@ -94,14 +105,14 @@ python main.py -r https://github.com/owner/repo --model Qwen/Qwen2-0.5B-Instruct
 | Token limits | Chunk size 1500 chars; no request exceeds typical context |
 | Structured output | Explicit JSON schema in prompt; parse and validate |
 | Extensibility | Modular components; easy to swap LLM |
-| Code-specialized | deepseek-coder model via Ollama |
+| Code-specialized | Qwen, SmolLM, Phi-2, StarCoder2 via Hugging Face |
 | Error handling | `errors="ignore"` on read; fallback for invalid JSON |
 | Parallelism | ThreadPoolExecutor for faster analysis |
 | Deduplication | Merge duplicate extractions across chunks |
 
 ## Assumptions
 
-- Transformers and PyTorch are installed; models download from Hugging Face Hub on first use
+- Transformers and PyTorch are installed; models download to `models/hf/` on first use
 - Git is available for cloning
 - Network access for initial repository clone
 - Focus on main source code; test code excluded

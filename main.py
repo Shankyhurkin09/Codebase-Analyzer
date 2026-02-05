@@ -1,6 +1,7 @@
 """Codebase analysis using Hugging Face LLM: main entry point."""
 
 import argparse
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from chunker import chunk_code
@@ -9,12 +10,15 @@ from llm_engine import (
     DEFAULT_MODEL_ID,
     analyze_chunk,
     check_hf_available,
+    download_all_models,
+    download_model,
     generate_architecture_summary,
+    get_downloaded_models,
 )
 from output_writer import aggregate_results, save_json
 from repo_loader import clone_repo, load_code_files, _repo_name_from_url
 
-MAX_WORKERS = 2  # HF models are memory-intensive; fewer workers
+MAX_WORKERS = 2  # 4 can cause "paging file too small" on limited RAM
 
 
 def _run_analysis(chunks: list[dict], model_id: str | None = None) -> list[dict]:
@@ -64,7 +68,14 @@ def main(
         print("Install: pip install transformers torch accelerate")
         return
 
-    model_id = model_id or DEFAULT_MODEL_ID
+    downloaded = get_downloaded_models()
+    if not downloaded:
+        print("Error: No models in models/hf/. Run: python main.py --download-all")
+        return
+    model_id = model_id or (DEFAULT_MODEL_ID if DEFAULT_MODEL_ID in downloaded else downloaded[0])
+    if model_id not in downloaded:
+        print(f"Error: Model '{model_id}' not downloaded. Available: {', '.join(downloaded)}")
+        return
     print(f"Using model: {model_id}")
 
     print("Cloning repository...")
@@ -96,7 +107,8 @@ def main(
 
     repo_name = _repo_name_from_url(repo_url)
     print("Aggregating and deduplicating results...")
-    aggregated = aggregate_results(results, repo_name=repo_name, repo_url=repo_url.strip())
+    files_read = [cf["file"] for cf in code_files]
+    aggregated = aggregate_results(results, repo_name=repo_name, repo_url=repo_url.strip(), files_read=files_read)
 
     print("Generating architecture summary...")
     summary_text = generate_architecture_summary(aggregated, model_id=model_id)
@@ -115,7 +127,30 @@ if __name__ == "__main__":
     parser.add_argument("--folder", "-f", type=str, default=".", help="Subfolder to analyze (default: .)")
     parser.add_argument("--limit", type=int, default=None, help="Limit chunks to process")
     parser.add_argument("--model", type=str, default=None, help=f"Hugging Face model ID (default: {AVAILABLE_MODELS[0]})")
+    parser.add_argument("--download", "-d", action="store_true", help="Download one model to models/hf/ (no analysis)")
+    parser.add_argument("--download-all", action="store_true", help="Download ALL models for app (no analysis). Run before hosting.")
     args = parser.parse_args()
+
+    if args.download_all:
+        ok, msg = check_hf_available()
+        if not ok:
+            print(f"Error: {msg}")
+            sys.exit(1)
+        n = download_all_models()
+        print(f"\n{n}/{len(AVAILABLE_MODELS)} models ready. Start app: python run_app.py")
+        sys.exit(0 if n > 0 else 1)
+
+    if args.download:
+        ok, msg = check_hf_available()
+        if not ok:
+            print(f"Error: {msg}")
+            sys.exit(1)
+        model = args.model or DEFAULT_MODEL_ID
+        success = download_model(model)
+        if success:
+            print(f"Ready. Run: python main.py -r <repo_url> --model {model}")
+        sys.exit(0 if success else 1)
+
     main(
         repo_url=args.repo,
         folder=args.folder,

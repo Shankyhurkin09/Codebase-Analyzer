@@ -57,10 +57,16 @@ def _merge_flat_list(items_list: list) -> list:
     return result
 
 
-def aggregate_results(results: list[dict], repo_name: str | None = None, repo_url: str | None = None) -> dict:
+def aggregate_results(
+    results: list[dict],
+    repo_name: str | None = None,
+    repo_url: str | None = None,
+    files_read: list[str] | None = None,
+) -> dict:
     """
     Aggregate per-chunk analyses into a unified structure with deduplication.
-    repo_name: optional display name (e.g. from URL). repo_url: optional source URL.
+    repo_name: optional display name. repo_url: optional source URL.
+    files_read: all file paths loaded from the folder (for complete listing).
     """
     project_overview = {
         "name": (repo_name or "").strip() or "codebase",
@@ -172,8 +178,29 @@ def aggregate_results(results: list[dict], repo_name: str | None = None, repo_ur
 
         files_list.append(file_analysis)
 
+    # Include files that were read but had no LLM analysis (e.g. due to chunk limit)
+    all_read = sorted(set(files_read or []) | set(by_file.keys()))
+    for fp in all_read:
+        if fp not in by_file:
+            files_list.append({
+                "file": fp,
+                "classes": None,
+                "methods": None,
+                "rest_endpoints": None,
+                "entity_mappings": None,
+                "dependencies": None,
+                "config_properties": None,
+                "design_patterns": None,
+                "security_aspects": None,
+                "error_handling": None,
+                "key_constants": None,
+                "complexity_notes": None,
+            })
+    files_list.sort(key=lambda x: x["file"])
+
     project_overview["statistics"] = {
-        "total_files_analyzed": len(files_list),
+        "total_files_read": len(all_read),
+        "total_files_analyzed": len(by_file),
         "total_classes": total_classes,
         "total_methods": total_methods,
         "total_rest_endpoints": total_endpoints,
@@ -191,6 +218,7 @@ def aggregate_results(results: list[dict], repo_name: str | None = None, repo_ur
 
     return {
         "project_overview": project_overview,
+        "files_read": all_read,
         "files": files_list,
     }
 

@@ -84,7 +84,15 @@ def clone_repo(url: str | None = None, force: bool = False) -> str | None:
         if force:
             shutil.rmtree(path)
         else:
-            return path
+            # Re-clone if existing clone is empty (e.g. interrupted previous clone)
+            try:
+                entries = [e for e in os.listdir(path) if e != ".git"]
+                if not entries:
+                    shutil.rmtree(path)
+                else:
+                    return path
+            except (OSError, PermissionError):
+                return path
     Repo.clone_from(target_url, path)
     return path
 
