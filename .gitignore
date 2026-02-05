@@ -12,9 +12,7 @@ env/
 # Generated / local data
 cloned_repos/
 sakila_repo/
-models/
 *.gguf
-analysis_output.json
 
 # IDE / OS
 .idea/
