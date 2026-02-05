@@ -153,6 +153,19 @@ python main.py -r https://github.com/owner/repo --model Qwen/Qwen2-0.5B-Instruct
 }
 ```
 
+## Deployment (Streamlit Community Cloud)
+
+Deploy the web UI for free on [Streamlit Community Cloud](https://share.streamlit.io):
+
+1. Go to [share.streamlit.io](https://share.streamlit.io) and sign in with GitHub.
+2. Click **New app** and choose:
+   - **Repository:** `Shankyhurkin09/Codebase-Analyzer`
+   - **Branch:** `main`
+   - **Main file path:** `app_ui.py`
+3. Click **Deploy**. The app will build and run (first run may be slower while dependencies install).
+
+**Note:** The app uses local LLM (Hugging Face models). On Streamlit Cloud, model download and inference run in the cloud; for heavy use consider memory limits and model size (smaller models like Qwen2-0.5B are more suitable for free tier).
+
 ## Project Structure
 
 ```
